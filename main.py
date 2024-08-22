@@ -150,3 +150,12 @@ class Grokfast:
                 new_grad = g*(1 - self.betas[1])
                 new_grad = new_grad + self.betas[1]*self.m[j]/(1.0 - power(self.betas[1], self.k))
                 para.grad.data = new_grad
+
+def make_sinusoidal(n, d, base=1e4):
+    '''
+    Makes sinusoidal positional embeddings of shape (n, d).
+    '''
+    p = torch.pow(base, -torch.linspace(0.0, 1.0, d//2))
+    p = torch.arange(n, dtype=torch.float32).unsqueeze(1)*p.unsqueeze(0)
+    p = torch.stack([torch.sin(p), torch.cos(p)], dim=-1).reshape(n, d)
+    return p
