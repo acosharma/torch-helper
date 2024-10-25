@@ -125,7 +125,7 @@ class MHA(nn.Module):
         if len(self.sin) < x.shape[2]:
             self.sin, self.cos = self.make_sin_cos(x.shape[2])
         x_ = x.reshape(x.shape[:-1] + (x.shape[-1]//2, 2))
-        x_ = torch.stack([-x_[..., 1], x_[..., 0]], dim=-1)
+        x_ = torch.stack([-x_[..., 1], x_[..., 0]], dim=-1).reshape(x.shape)
         x = x*self.cos[:x.shape[2]] + x_*self.sin[:x.shape[2]]
         x = rearrange(x, 'b h n a -> b n (h a)', h=self.num_heads)
         
