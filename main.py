@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from torch import nn
 import torch
 
+from einops import rearrange
+
 def nice_int_params(m):
     '''
     Returns a nicely formatted total number of parameters in an nn.Module.
