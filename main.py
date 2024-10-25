@@ -92,19 +92,43 @@ class SwiGLU(nn.Module):
 
 class MHA(nn.Module):
     '''
-    Simple Multihead Attention.
+    Simple Multihead Attention. Uses RoPE.
     '''
-    def __init__(self, width, num_heads):
+    def __init__(self, width, num_heads, max_length=None):
         super().__init__()
         self.width = width
         self.num_heads = num_heads
+        self.max_length = max_length
 
-        assert self.width % self.num_heads == 0
+        assert self.width % 2*self.num_heads == 0
 
         self.q = nn.Linear(self.width, width, bias=False)
         self.kv = nn.Linear(self.width, 2*width, bias=False)
         self.mha = nn.MultiheadAttention(self.width, self.num_heads, batch_first=True, bias=False)
         self.o = nn.Linear(self.width, self.width, bias=False)
+
+        if self.max_length is not None:
+            self.sin, self.cos = self.make_sin_cos(self.max_length)
+        else:
+            self.sin, self.cos = [], []
+    
+    def make_sin_cos(self, n):
+        theta = torch.arange(n).unsqueeze(-1)*torch.pow(
+            1e4, torch.repeat_interleave(
+                -torch.linspace(0.0, 1.0, self.width//(2*self.num_heads)), 2))
+        return torch.sin(theta), torch.cos(theta)
+    
+    def apply_rope(self, x):
+        x = rearrange(x, 'b n (h a) -> b h n a', h=self.num_heads)
+        if len(self.sin) < x.shape[2]:
+            self.sin, self.cos = self.make_sin_cos(x.shape[2])
+        x_ = x.reshape(x.shape[:-1] + (x.shape[-1]//2, 2))
+        x_ = (x_[..., [1, 0]]*torch.Tensor([-1.0, 1.0])).reshape(x.shape)
+
+        x = x*self.cos[:x.shape[2]] + x_*self.sin[:x.shape[2]]
+        x = rearrange(x, 'b h n a -> b n (h a)', h=self.num_heads)
+
+        return x
 
     def forward(self, x, y, x_mask, decoder):
         '''
@@ -119,6 +143,8 @@ class MHA(nn.Module):
             mask = torch.arange(N)[:, None] < torch.arange(M)[None, :]
         else:
             mask = None
+
+        q, k = self.apply_rope(q), self.apply_rope(k)
 
         out = self.mha(
             q, k, v, need_weights=False, key_padding_mask=torch.logical_not(x_mask),
