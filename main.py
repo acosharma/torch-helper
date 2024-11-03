@@ -104,8 +104,8 @@ class MHA(nn.Module):
 
         assert self.width % 2*self.num_heads == 0
 
-        self.q = nn.Linear(self.width, width, bias=False)
-        self.kv = nn.Linear(self.width, 2*width, bias=False)
+        self.q = nn.Linear(self.width, self.width, bias=False)
+        self.kv = nn.Linear(self.width, 2*self.width, bias=False)
         self.mha = nn.MultiheadAttention(self.width, self.num_heads, batch_first=True, bias=False)
         self.o = nn.Linear(self.width, self.width, bias=False)
 
