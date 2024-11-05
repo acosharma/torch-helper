@@ -107,7 +107,7 @@ class MHA(nn.Module):
         else:
             self.att_width = att_width
 
-        self.qkv = nn.ParameterList(
+        self.qkv = nn.ParameterDict(
             {a:nn.Parameter(
                 torch.randn(
                     self.width, self.num_heads*self.att_width)*(self.width**-0.5)) for a in 'qkv'})
