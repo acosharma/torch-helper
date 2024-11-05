@@ -96,18 +96,26 @@ class MHA(nn.Module):
     '''
     Simple Multihead Attention. Uses RoPE.
     '''
-    def __init__(self, width, num_heads, max_length=None):
+    def __init__(self, width, num_heads, max_length=None, att_width=None):
         super().__init__()
         self.width = width
         self.num_heads = num_heads
         self.max_length = max_length
 
-        assert self.width % 2*self.num_heads == 0
+        if att_width is None:
+            self.att_width = self.width//self.num_heads
+        else:
+            self.att_width = att_width
 
-        self.q = nn.Linear(self.width, self.width, bias=False)
-        self.kv = nn.Linear(self.width, 2*self.width, bias=False)
+        self.qkv = nn.ParameterList(
+            {a:nn.Parameter(
+                torch.randn(
+                    self.width, self.num_heads*self.att_width)*(self.width**-0.5)) for a in 'qkv'})
+             
         self.mha = nn.MultiheadAttention(self.width, self.num_heads, batch_first=True, bias=False)
-        self.o = nn.Linear(self.width, self.width, bias=False)
+        self.o = nn.Parameter(
+            torch.randn(
+                self.num_heads*self.att_width, self.width)*((self.num_heads*self.att_width)**-0.5))
 
         if self.max_length is not None:
             self.sin, self.cos = self.make_sin_cos(self.max_length)
@@ -131,53 +139,31 @@ class MHA(nn.Module):
         
         return x
 
-    def forward(self, x, y, x_mask, decoder):
+    def forward(self, q, k=None, v=None, mask=None, decoder=True):
         '''
-        `x` gives keys and values and  `y` gives queries.
-        `True` in  `x_mask` indicates that `y` should attend to `x` there.
+        `True` in  `mask` indicates that that entry to the K/V axis should be attended to.
         '''
-        q = self.q(y)
-        k, v = self.kv(x).split(self.width, dim=-1)
-
-        if decoder:
-            N, M = y.shape[1], x.shape[1]
-            mask = torch.arange(N)[:, None] < torch.arange(M)[None, :]
-        else:
-            mask = None
-
+        if k is None:
+            k = q
+        if v is None:
+            v = k
+        if mask is not None:
+            mask = torch.logical_not(mask)
+            
+        q, k, v = q @ self.qkv['q'], k @ self.qkv['k'], v @ self.qkv['v']
         q, k = self.apply_rope(q), self.apply_rope(k)
+        
+        attn_mask = None
+        if decoder:
+            N, M = q.shape[1], k.shape[1]
+            attn_mask = torch.arange(N)[:, None] < torch.arange(M)[None, :]
 
         out = self.mha(
-            q, k, v, need_weights=False, key_padding_mask=torch.logical_not(x_mask),
-            attn_mask=mask, is_causal=decoder)[0]
+            q, k, v, need_weights=False, key_padding_mask=mask,
+            attn_mask=attn_mask, is_causal=decoder)[0]
 
-        return self.o(out)
-
-class Grokfast:
-    '''
-    Implementation of Grokfast, from "Lee et al. 2024" (arXiv:2405.20233).
-    Uses a second beta instead of a lambda and bias corrects.
-    Basically combines the gradients with momentum before it's even passed to the optimizer.
-    In other words, with the second beta being 0.0, would do nothing, and with it being 1.0,
-    effectively is just momentum, however can increase generalisation inbetween.
-    Pass `params` in the same order every time.
-    '''
-    def __init__(self, params, betas=(0.99, 0.85)):
-        self.m = [torch.zeros_like(i) for i in params],
-        self.betas = betas
-        self.k = 0
-    
-    def update(self, params):
-        self.k += 1
-
-        for j, para in enumerate(params):
-            if para.grad is not None:
-                g = para.grad.data.detach()
-                self.m[j] = self.betas[0]*self.m[j] + (1 - self.betas[0])*g
-                new_grad = g*(1 - self.betas[1])
-                new_grad = new_grad + self.betas[1]*self.m[j]/(1.0 - power(self.betas[1], self.k))
-                para.grad.data = new_grad
-
+        return out @ self.o
+        
 def make_sinusoidal(n, d, base=1e4):
     '''
     Makes sinusoidal positional embeddings of shape (n, d).
