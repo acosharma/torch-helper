@@ -107,16 +107,14 @@ class MHA(nn.Module):
         else:
             self.att_width = att_width
 
-        self.qkv = nn.ParameterDict(
-            {a:nn.Parameter(
-                torch.randn(
-                    self.width, self.num_heads*self.att_width)*(self.width**-0.5)) for a in 'qkv'})
+        self.qkv = nn.ModuleDict(
+            {a:nn.Linear(
+                self.width, self.num_heads*self.att_width, bias=False
+            ) for a in 'qkv'})
              
         self.mha = nn.MultiheadAttention(self.width, self.num_heads, batch_first=True, bias=False)
-        self.o = nn.Parameter(
-            torch.randn(
-                self.num_heads*self.att_width, self.width)*((self.num_heads*self.att_width)**-0.5))
-
+        self.o = nn.Linear(self.num_heads*self.att_width, self.width, bias=False)
+        
         if self.max_length is not None:
             self.sin, self.cos = self.make_sin_cos(self.max_length)
         else:
@@ -150,7 +148,7 @@ class MHA(nn.Module):
         if mask is not None:
             mask = torch.logical_not(mask)
             
-        q, k, v = q @ self.qkv['q'], k @ self.qkv['k'], v @ self.qkv['v']
+        q, k, v = self.qkv['q'](q), self.qkv['k'](k), self.qkv['v'](v)
         q, k = self.apply_rope(q), self.apply_rope(k)
         
         attn_mask = None
@@ -162,7 +160,7 @@ class MHA(nn.Module):
             q, k, v, need_weights=False, key_padding_mask=mask,
             attn_mask=attn_mask, is_causal=decoder)[0]
 
-        return out @ self.o
+        return self.o(out)
         
 def make_sinusoidal(n, d, base=1e4):
     '''
