@@ -123,7 +123,7 @@ class MHA(nn.Module):
     def make_sin_cos(self, n):
         theta = torch.arange(n).unsqueeze(-1)*torch.pow(
             1e4, torch.repeat_interleave(
-                -torch.linspace(0.0, 1.0, self.width//(2*self.num_heads)), 2))
+                -torch.linspace(0.0, 1.0, self.att_width//2, 2))
         return torch.sin(theta), torch.cos(theta)
     
     def apply_rope(self, x):
