@@ -57,8 +57,10 @@ def epoch_display(func, start, end, batch_size):
     '''
     total_steps = int(ceil((end - start)/batch_size))
 
+    progress = '[' + '>' + 20*' ' + ']'
+
     t = time.time()
-    out = IPy_display(IPy_Pretty('Starting ...'), display_id=True)
+    out = IPy_display(IPy_Pretty(f'{progress} 0/{total_steps}'), display_id=True)
     losses = []
 
     for i in range(start, end, batch_size):
@@ -69,9 +71,12 @@ def epoch_display(func, start, end, batch_size):
         t_left = (total_steps - step)*(time.time() - t)/step
         t_left = str(timedelta(seconds=t_left))[:-7]
 
-        out.update(IPy_Pretty(f'{step}/{total_steps}, {mean(losses):.4f} {t_left}'))
+        k = int(20*step/total_steps)
+        progress = '[' + '='*k + '>' + ' '*(20 - k) + ']'
 
-    out.update(IPy_Pretty(f'{total_steps}/{total_steps}, {mean(losses):.4f}'))
+        out.update(IPy_Pretty(f'{progress} {step}/{total_steps}, {mean(losses):.4f} {t_left}'))
+
+    out.update(IPy_Pretty(f'{progress} {total_steps}/{total_steps}, {mean(losses):.4f}'))
 
     return losses
 
