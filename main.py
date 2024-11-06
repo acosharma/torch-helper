@@ -112,7 +112,7 @@ class MHA(nn.Module):
                 self.width, self.num_heads*self.att_width, bias=False
             ) for a in 'qkv'})
              
-        self.mha = nn.MultiheadAttention(self.width, self.num_heads, batch_first=True, bias=False)
+        self.mha = nn.MultiheadAttention(self.att_width*self.num_heads, self.num_heads, batch_first=True, bias=False)
         self.o = nn.Linear(self.num_heads*self.att_width, self.width, bias=False)
         
         if self.max_length is not None:
@@ -150,7 +150,7 @@ class MHA(nn.Module):
             
         q, k, v = self.qkv['q'](q), self.qkv['k'](k), self.qkv['v'](v)
         q, k = self.apply_rope(q), self.apply_rope(k)
-        
+
         attn_mask = None
         if decoder:
             N, M = q.shape[1], k.shape[1]
