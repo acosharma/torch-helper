@@ -116,55 +116,56 @@ class MHA(nn.Module):
             {a:nn.Linear(
                 self.width, self.num_heads*self.att_width, bias=False
             ) for a in 'qkv'})
-             
-        self.mha = nn.MultiheadAttention(self.att_width*self.num_heads, self.num_heads, batch_first=True, bias=False)
+
         self.o = nn.Linear(self.num_heads*self.att_width, self.width, bias=False)
-        
+
         if self.max_length is not None:
             self.sin, self.cos = self.make_sin_cos(self.max_length)
         else:
             self.sin, self.cos = [], []
-    
+
     def make_sin_cos(self, n):
         theta = torch.arange(n).unsqueeze(-1)*torch.pow(
             1e4, torch.repeat_interleave(
                 -torch.linspace(0.0, 1.0, self.att_width//2), 2))
         return torch.sin(theta), torch.cos(theta)
-    
+
     def apply_rope(self, x):
-        x = rearrange(x, 'b n (h a) -> b h n a', h=self.num_heads)
         if len(self.sin) < x.shape[2]:
             self.sin, self.cos = self.make_sin_cos(x.shape[2])
         x_ = x.reshape(x.shape[:-1] + (x.shape[-1]//2, 2))
         x_ = torch.stack([-x_[..., 1], x_[..., 0]], dim=-1).reshape(x.shape)
         x = x*self.cos[:x.shape[2]] + x_*self.sin[:x.shape[2]]
-        x = rearrange(x, 'b h n a -> b n (h a)', h=self.num_heads)
-        
         return x
 
-    def forward(self, q, k=None, v=None, mask=None, decoder=True):
+    def forward(self, q, k=None, v=None, causal=True):
         '''
         `True` in  `mask` indicates that that entry to the K/V axis should be attended to.
         '''
+
+        qkv = {'q':q}
+
         if k is None:
-            k = q
+            qkv['k'] = q
+        else:
+            qkv['k'] = k
+        
         if v is None:
-            v = k
-        if mask is not None:
-            mask = torch.logical_not(mask)
-            
-        q, k, v = self.qkv['q'](q), self.qkv['k'](k), self.qkv['v'](v)
-        q, k = self.apply_rope(q), self.apply_rope(k)
+            qkv['v'] = qkv['k']
+        else:
+            qkv['v'] = v
 
-        attn_mask = None
-        if decoder:
-            N, M = q.shape[1], k.shape[1]
-            attn_mask = torch.arange(N)[:, None] < torch.arange(M)[None, :]
+        for name in 'qkv':
+            qkv[name] = self.qkv[name](qkv[name])
+            qkv[name] = rearrange(qkv[name], 'b n (h a) -> b h n a', h=self.num_heads)
 
-        out = self.mha(
-            q, k, v, need_weights=False, key_padding_mask=mask,
-            attn_mask=attn_mask, is_causal=decoder)[0]
+        qkv['q'], qkv['k'] = self.apply_rope(qkv['q']), self.apply_rope(qkv['k'])
 
+        out = F.scaled_dot_product_attention(
+            query=qkv['q'], key=qkv['k'], value=qkv['v'], is_causal=causal)
+        
+        out = rearrange(out, 'b h n a -> b n (h a)', h=self.num_heads)
+        
         return self.o(out)
         
 def make_sinusoidal(n, d, base=1e4):
