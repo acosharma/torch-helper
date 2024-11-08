@@ -139,10 +139,6 @@ class MHA(nn.Module):
         return x
 
     def forward(self, q, k=None, v=None, causal=True):
-        '''
-        `True` in  `mask` indicates that that entry to the K/V axis should be attended to.
-        '''
-
         qkv = {'q':q}
 
         if k is None:
